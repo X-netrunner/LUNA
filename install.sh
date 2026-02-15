@@ -30,7 +30,7 @@ if [[ "$(uname)" != "Linux" ]]; then
     exit 1
 fi
 
-echo "[1/7] Checking system requirements..."
+echo "[1/8] Checking system requirements..."
 echo
 
 # Check for required commands
@@ -75,16 +75,16 @@ else
 fi
 
 echo
-echo "[2/7] Creating directory structure..."
+echo "[2/8] Creating directory structure..."
 
 mkdir -p logs
-mkdir -p memory/chroma_db
+mkdir -p memory
 mkdir -p prompts
 
 print_success "Directories created"
 
 echo
-echo "[3/7] Making luna.sh executable..."
+echo "[3/8] Making luna.sh executable..."
 
 if [ -f "luna.sh" ]; then
     chmod +x luna.sh
@@ -95,7 +95,7 @@ else
 fi
 
 echo
-echo "[4/7] Installing Python dependencies..."
+echo "[4/8] Installing Python dependencies..."
 echo
 
 # Determine which pip command to use
@@ -124,25 +124,25 @@ $PIP_CMD install sentence-transformers $PIP_FLAGS --quiet
 print_success "Python dependencies installed"
 
 echo
-echo "[5/7] Checking Ollama models..."
+echo "[5/8] Checking Ollama models..."
 echo
 
 if command -v ollama &> /dev/null; then
     MODELS=$(ollama list 2>/dev/null | awk 'NR>1 {print $1}' || echo "")
-    
+
     REQUIRED_MODELS=(
         "qwen2:1.5b-instruct"
         "llama3.2:3b-instruct-q4_k_m"
     )
-    
+
     MISSING_MODELS=()
-    
+
     for model in "${REQUIRED_MODELS[@]}"; do
         if ! echo "$MODELS" | grep -q "^${model%:*}"; then
             MISSING_MODELS+=("$model")
         fi
     done
-    
+
     if [ ${#MISSING_MODELS[@]} -gt 0 ]; then
         print_warning "Missing Ollama models:"
         for model in "${MISSING_MODELS[@]}"; do
@@ -175,7 +175,7 @@ else
 fi
 
 echo
-echo "[6/7] Checking system.txt..."
+echo "[6/8] Checking system.txt..."
 
 if [ ! -f "prompts/system.txt" ]; then
     print_warning "prompts/system.txt not found (will use the one from repo)"
@@ -184,8 +184,17 @@ else
 fi
 
 echo
-echo "[7/7] Pre-downloading embedding model..."
+echo "[7/8] Pre-downloading embedding model..."
 echo
+
+echo "[8/8] Moving files to directories ..."
+
+mv "rag.py" "$(pwd)/memory/"
+mv "system.txt" "$(pwd)/prompts/"
+touch "$(pwd)/logs/log.txt"
+touch "$(pwd)/logs/agent.log"
+
+print_success "Files Moved"
 
 # Pre-download the embedding model
 python3 - <<'EOF'
