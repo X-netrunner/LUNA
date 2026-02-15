@@ -1,5 +1,5 @@
 # LUNA
-LUNA is an ai assistant for linux , coded wrt arch linux specifically 
+LUNA is an ai assistant for linux , coded wrt arch linux specifically. Main lanuages used are bash and python.
 
 # DEPENDENCIES
 - Ollama 
