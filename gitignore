@@ -1,0 +1,42 @@
+# Luna AI Agent - Git Ignore
+
+# Logs
+logs/
+*.log
+
+# Memory database
+memory/chroma_db/
+memory/long_term.log
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Old/backup files
+*-old.*
+*.bak
+*.backup
