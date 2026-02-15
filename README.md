@@ -4,8 +4,7 @@ LUNA is an ai assistant for linux , coded wrt arch linux specifically
 # DEPENDENCIES
 - Ollama 
 - Python and pip (or pyenv)
-- chromadb ( only supports python 3.12 or 3.11 for now , So downgrade python 3.14 to 3.12)
-- pull nomic-embed-text from ollama
+- chromadb ,sentence-transformers ( only supports python 3.12 or 3.11 for now , So downgrade python 3.14 to 3.12)
 - Models for LUNA 1.5b , 3b , 7b or 8b of your choice but change the luna.sh script accordingly
 
 # INSTALLATION
