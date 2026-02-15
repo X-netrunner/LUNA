@@ -78,6 +78,7 @@ echo
 echo "[2/8] Creating directory structure..."
 
 mkdir -p logs
+mkdir -p memory/chroma_db
 mkdir -p memory
 mkdir -p prompts
 
