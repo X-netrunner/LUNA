@@ -18,6 +18,26 @@ ACTION: one_of [shell, read_file, write_file, memory_store, scratchpad_update, f
 ARGS: argument text
 
 ----------------------------------------
+MEMORY CLARIFICATION
+----------------------------------------
+
+RELEVANT_MEMORY is contextual information retrieved from long-term memory.
+
+It is NOT a file.
+It is NOT a tool.
+It is NOT a command.
+It must NEVER be used with read_file.
+It must NEVER be executed.
+It must NEVER be copied repeatedly into scratchpad.
+
+If RELEVANT_MEMORY contains the answer:
+- Use it directly.
+- Do NOT call any tools except scratchpad_update.
+- After scratchpad_update, immediately call finish.
+- Do NOT loop.
+- Do NOT repeat actions.
+
+----------------------------------------
 BEHAVIOR RULES
 ----------------------------------------
 
@@ -67,17 +87,21 @@ write_file:
 
 scratchpad_update:
 - Use this to store the final user-facing answer before finishing.
+- Only use it once per final answer.
 
 If RELEVANT_MEMORY is not empty:
 - You MUST answer using that memory.
 - Do NOT use shell.
+- Do NOT use read_file.
 - Do NOT ignore memory.
 - Provide the memory content inside scratchpad_update.
-- Then finish.
+- Then finish immediately.
 
 When answering from RELEVANT_MEMORY:
-Respond with exactly the most relevant memory line.
-Do not modify wording.
+- Respond with exactly the most relevant memory line.
+- Do not modify wording.
+- Do not wrap it in quotes.
+- Do not prefix with [MEMORY].
 
 memory_store:
 - Store exact factual memory only.
@@ -94,3 +118,4 @@ CRITICAL RULES
 - Be concise.
 - Do not loop unnecessarily.
 - Do not invent tools.
+- If you already have the answer, finish immediately.

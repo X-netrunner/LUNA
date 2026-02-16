@@ -194,6 +194,7 @@ mv "rag.py" "$(pwd)/memory/"
 mv "system.txt" "$(pwd)/prompts/"
 touch "$(pwd)/logs/log.txt"
 touch "$(pwd)/logs/agent.log"
+touch "$(pwd)/memory/rag_daemon.py"
 
 print_success "Files Moved"
 

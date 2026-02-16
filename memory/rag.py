@@ -10,7 +10,7 @@ DEBUG = os.getenv("LUNA_DEBUG", "false").lower() == "true"  # gets it from luna.
 
 def debug_print(*args):
     if DEBUG:
-        print("[DEBUG]", *args)
+        print("[DEBUG]", *args, file=sys.stderr)
 
 
 os.makedirs("memory/chroma_db", exist_ok=True)
@@ -30,9 +30,16 @@ def get_embedding_function():
 
 client = chromadb.PersistentClient(path="memory/chroma_db")
 
-collection = client.get_or_create_collection(
-    name="memory", embedding_function=get_embedding_function()
-)
+collection = None
+
+
+def get_collection():
+    global collection
+    if collection is None:
+        collection = client.get_or_create_collection(
+            name="memory", embedding_function=get_embedding_function()
+        )
+    return collection
 
 
 def add_entry(text):
@@ -41,16 +48,19 @@ def add_entry(text):
 
     doc_id = hashlib.sha256(text.encode()).hexdigest()
 
+    collection = get_collection()
     collection.upsert(documents=[text], ids=[doc_id])
 
     debug_print("Memory stored with ID:", doc_id)
     return "✓ Memory saved."
 
 
+# change 0.8 to 0.5 if you get mismatches
 def query(text, top_k=1, similarity_threshold=0.8):
     if not text.strip():
         return ""
 
+    collection = get_collection()
     results = collection.query(
         query_texts=[text], n_results=top_k, include=["documents", "distances"]
     )
@@ -70,11 +80,8 @@ def query(text, top_k=1, similarity_threshold=0.8):
     if not relevant_docs:
         return ""
 
-    output = []
-    for i, doc in enumerate(relevant_docs):
-        output.append(f"[MEMORY {i + 1}] {doc}")
-
-    return "\n".join(output)
+    # RETURN RAW MEMORY TEXT ONLY
+    return "\n".join(relevant_docs)
 
 
 if __name__ == "__main__":

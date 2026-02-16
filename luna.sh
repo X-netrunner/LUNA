@@ -8,6 +8,7 @@ RAG="$f_p/memory/rag.py"
 MODEL_SMALL="qwen2:1.5b-instruct"
 MODEL_MEDIUM="llama3.2:3b-instruct-q4_k_m"
 MODEL_LARGE="mannix/llama3.1-8b-lexi:q4_k_m"
+LUNA_MODE="ephemeral"   # change to daemon when needed
 
 MAX_STEPS=6 #ensures that it doesn't go into an infinte loop
 
@@ -30,6 +31,9 @@ mkdir -p logs memory
 run_model() {
     local model="$1"
     local prompt="$2"
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        echo "Running: $model"
+    fi
     ollama run "$model" "$prompt"
 } #just to make it modular for future editting everything will come back here to run the model
 
@@ -154,12 +158,22 @@ run_agent() {
     PREV_ARGS=""
 
     RELEVANT_MEMORY=$(python3 $RAG query "$GOAL" 2>/dev/null)
+    if [[ -n "$RELEVANT_MEMORY" ]]; then
+        echo "$RELEVANT_MEMORY"
+        return
+    fi
+
 
     while [ $STEP -lt $MAX_STEPS ]; do
 
         PROMPT=$(build_prompt)
 
-        RESPONSE=$(run_model "$MODEL_SMALL" "$PROMPT")
+        RESPONSE=$(run_model "$MODEL_MEDIUM" "$PROMPT")
+        if [[ "$DEBUG_MODE" == "true" ]]; then
+            echo "MODEL RAW RESPONSE:"
+            echo "$RESPONSE"
+        fi
+
         ACTION=$(extract_field "$RESPONSE" "ACTION")
         ARGS=$(extract_field "$RESPONSE" "ARGS")
 
@@ -245,7 +259,7 @@ run_agent() {
 GOAL="$*"
 LOWER=$(echo "$GOAL" | tr '[:upper:]' '[:lower:]')
 
-if [[ "$LOWER" =~ ^i\ (am|use|have|like) ]]; then
+if [[ "$LOWER" =~ ^i\ (am|use|have|like|remember|hate) ]]; then
     echo "You mentioned: \"$GOAL\""
     echo "Should I remember this? (yes/no)"
     read CONFIRM
@@ -303,22 +317,6 @@ if [[ "$LOWER" == *"open editor"* || "$LOWER" == *"zed"* || "$LOWER" == *"text e
     exit 0
 fi
 
-# Default conversation
-MEMORY_RESULT=$(python3 $RAG query "$GOAL" 2>/dev/null)
-
-# Casual conversation
-if [[ "$LOWER" =~ ^(hi|hello|hey|how\ are\ you|whats\ up|what\'s\ up)$ ]]; then
-    ollama run "$MODEL_MEDIUM" "Respond briefly and calmly: $GOAL"
-    exit 0
-fi
-
-if [[ -n "$MEMORY_RESULT" ]]; then
-    echo "$MEMORY_RESULT"
-    exit 0
-fi
-
-
-
 # Knowledge-style questions should still use agent (so RAG works)
 if [[ "$LOWER" == *"what"* || "$LOWER" == *"explain"* || "$LOWER" == *"why"* || "$LOWER" == *"how"* || "$LOWER" == *"where"* ]]; then
     run_agent "$GOAL"
@@ -328,6 +326,12 @@ fi
 # Action keywords → Agent
 if [[ "$LOWER" == *"list"* || "$LOWER" == *"find"* || "$LOWER" == *"create"* || "$LOWER" == *"delete"* || "$LOWER" == *"write"* || "$LOWER" == *"run"* ]]; then
     run_agent "$GOAL"
+    exit 0
+fi
+
+# Default conversation
+if [[ "$LOWER" =~ ^(hi|hello|hey|how\ are\ you|whats\ up|what\'s\ up)$ ]]; then
+    ollama run "$MODEL_MEDIUM" "Respond briefly and calmly: $GOAL"
     exit 0
 fi
 
