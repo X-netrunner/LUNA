@@ -132,7 +132,6 @@ if command -v ollama &> /dev/null; then
     MODELS=$(ollama list 2>/dev/null | awk 'NR>1 {print $1}' || echo "")
 
     REQUIRED_MODELS=(
-        "qwen2:1.5b-instruct"
         "llama3.2:3b-instruct-q4_k_m"
     )
 
@@ -171,7 +170,6 @@ else
     print_warning "Ollama not installed. Install from: https://ollama.ai"
     echo
     echo "Then run:"
-    echo "  ollama pull qwen2:1.5b-instruct"
     echo "  ollama pull llama3.2:3b-instruct-q4_k_m"
 fi
 

@@ -5,7 +5,7 @@ A ReAct-style (Reason + Action) AI agent for Linux that runs entirely locally us
 
 - **ReAct Agent Loop** - Thinks step-by-step before taking action
 - **Vector Memory** - ChromaDB-powered long-term memory with semantic search
-- **Smart Model Escalation** - Small → Medium → Large models for efficiency
+- **Smart Model Escalation** - Medium → Large models for efficiency
 - **Safety Guardrails** - Protected files, repeat detection, error recovery
 - **Fast Routing** - Common commands bypass AI for instant responses
 - **Context-Aware** - Uses scratchpad and relevant memory for each task
@@ -57,8 +57,8 @@ pip3 install -r requirements.txt --break-system-packages  # On Arch
 pip3 install -r requirements.txt  # On Ubuntu/Debian
 
 # Download Ollama models
-ollama pull qwen2:1.5b-instruct
 ollama pull llama3.2:3b-instruct-q4_k_m
+ollama pull mannix/llama3.1-8b-lexi:q4_k_m
 
 # Make executable
 chmod +x luna.sh
@@ -146,7 +146,6 @@ DEBUG_MODE=true
 Configure which models to use (lines 8-10):
 
 ```bash
-MODEL_SMALL="qwen2:1.5b-instruct"              # Fast routing
 MODEL_MEDIUM="llama3.2:3b-instruct-q4_k_m"     # General tasks
 MODEL_LARGE="mannix/llama3.1-8b-lexi:q4_k_m"   # Complex reasoning (optional)
 ```
@@ -292,7 +291,6 @@ pip3 install chromadb sentence-transformers --break-system-packages
 ### Ollama models not found
 
 ```bash
-ollama pull qwen2:1.5b-instruct
 ollama pull llama3.2:3b-instruct-q4_k_m
 ```
 
@@ -323,7 +321,6 @@ chmod +x luna.sh
 
 - **Fast commands** (open, list files): ~0.1s (no AI)
 - **Memory retrieval**: ~0.3s (ChromaDB search)
-- **Agent tasks** (small model): 1-3s
 - **Agent tasks** (medium model): 3-8s
 - **Complex reasoning** (large model): 10-20s
 
