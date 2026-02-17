@@ -163,7 +163,6 @@ Luna uses a Reason + Action pattern:
 
 ### Model Escalation
 
-- **Small model (1.5B)** - First attempt, fastest
 - **Medium model (3B)** - If small model fails or gives malformed output
 - **Large model (8B)** - For complex tasks or after repeated failures
 
