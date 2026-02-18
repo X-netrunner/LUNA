@@ -101,9 +101,15 @@ execute_tool() {
             ;;
 
         finish)
-            OUTPUT="$args"
+            local clean_args="${args,,}"  # lowercase for comparison
+            if [ -n "$args" ] && [ "$clean_args" != "none" ]; then
+                OUTPUT="$args"
+            else
+                OUTPUT="$SCRATCHPAD"
+            fi
             STATUS=0
             ;;
+
         *)
             OUTPUT="Invalid action."
             STATUS=1
@@ -209,14 +215,21 @@ run_agent() {
             SCRATCHPAD_COUNT=$((SCRATCHPAD_COUNT+1))
             if [ $SCRATCHPAD_COUNT -gt 1 ]; then
                 ACTION="finish"
-                ARGS="none"
+                ARGS=""  # fix: "none" was being returned literally; empty falls back to $SCRATCHPAD
             fi
         fi
 
-        # Prevent memory_store during simple Q&A
+        if [[ "$ACTION" == "finish" ]]; then
+            RESULT=$(execute_tool "$ACTION" "$ARGS")  # fix: was printing stale $RESULT from previous iteration
+            echo "$RESULT"
+            break
+        fi
+
+        # Convert memory_store into direct answer
         if [[ "$ACTION" == "memory_store" ]]; then
+            execute_tool "memory_store" "$ARGS" > /dev/null  # fix: was skipping actual storage
             ACTION="finish"
-            ARGS="none"
+            ARGS=""  # fix: clear args so finish falls back to $SCRATCHPAD, not the stored memory text
         fi
 
         if [ $REPEAT_COUNT -ge 2 ]; then
@@ -247,7 +260,7 @@ run_agent() {
             RESULT=$(execute_tool "$ACTION" "$ARGS")
         fi
 
-        if [ "$ACTION" == "finish" ]; then
+        if [[ "$ACTION" == "finish" ]]; then
             echo "$RESULT"
             break
         fi
