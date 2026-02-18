@@ -65,7 +65,10 @@ BEHAVIOR RULES
      ACTION: finish
      ARGS: none
 
-3) You may ONLY use ACTION: finish after scratchpad_update.
+3) When you know the final answer, you must:
+    Use ACTION: scratchpad_update with the final answer.
+    Immediately use ACTION: finish with no arguments.
+    Do not repeat scratchpad_update more than once.
 
 4) Never finish without producing an answer.
 
@@ -119,3 +122,4 @@ CRITICAL RULES
 - Do not loop unnecessarily.
 - Do not invent tools.
 - If you already have the answer, finish immediately.
+- Never repeat the same ACTION twice in a row.

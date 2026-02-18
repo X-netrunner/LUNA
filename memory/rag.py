@@ -43,8 +43,18 @@ def get_collection():
 
 
 def add_entry(text):
-    if not text.strip():
+    text = text.strip()
+
+    if not text:
         return "__ERROR__ Empty memory."
+
+    # ❌ Do not store questions
+    if text.endswith("?"):
+        return "__ERROR__ Refusing to store a question."
+
+    # ❌ Do not store short fragments
+    if len(text.split()) < 3:
+        return "__ERROR__ Too short to store."
 
     doc_id = hashlib.sha256(text.encode()).hexdigest()
 

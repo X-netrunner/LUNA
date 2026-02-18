@@ -16,7 +16,7 @@ LONG_MEMORY="$f_p/memory/long_term.log" #will use later to make sure LUNA will s
 CRITICAL_FILES=("$f_p/luna.sh" "$f_p/prompts/system.txt") #personallities , rules and what not
 
 SCRATCHPAD="" #think about it like cache but for LUNA it will help to keep some data relavent till the session ends.
-DEBUG_MODE=false #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
+DEBUG_MODE=true #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
 export LUNA_DEBUG=$DEBUG_MODE #sends this to rag.py
 
 #User based variables
@@ -149,6 +149,7 @@ log_step() {
 run_agent() {
     GOAL="$*" # can use $* as well if you are getting any error with $@ use $*
     STEP=0
+    SCRATCHPAD_COUNT=0
     LAST_ACTION="none"
     LAST_OBSERVATION="none"
     FAILURE_COUNT=0
@@ -157,10 +158,6 @@ run_agent() {
     PREV_ARGS=""
 
     RELEVANT_MEMORY=$(python3 $RAG query "$GOAL" 2>/dev/null)
-    if [[ -n "$RELEVANT_MEMORY" ]]; then
-        echo "$RELEVANT_MEMORY"
-        return
-    fi
 
 
     while [ $STEP -lt $MAX_STEPS ]; do
@@ -206,6 +203,21 @@ run_agent() {
 
         PREV_ACTION="$ACTION"
         PREV_ARGS="$ARGS"
+
+        #  Prevent multiple scratchpad updates
+        if [[ "$ACTION" == "scratchpad_update" ]]; then
+            SCRATCHPAD_COUNT=$((SCRATCHPAD_COUNT+1))
+            if [ $SCRATCHPAD_COUNT -gt 1 ]; then
+                ACTION="finish"
+                ARGS="none"
+            fi
+        fi
+
+        # Prevent memory_store during simple Q&A
+        if [[ "$ACTION" == "memory_store" ]]; then
+            ACTION="finish"
+            ARGS="none"
+        fi
 
         if [ $REPEAT_COUNT -ge 2 ]; then
             LAST_OBSERVATION="Repeated action detected."
