@@ -16,7 +16,7 @@ LONG_MEMORY="$f_p/memory/long_term.log" #will use later to make sure LUNA will s
 CRITICAL_FILES=("$f_p/luna.sh" "$f_p/prompts/system.txt") #personallities , rules and what not
 
 SCRATCHPAD="" #think about it like cache but for LUNA it will help to keep some data relavent till the session ends.
-DEBUG_MODE=true #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
+DEBUG_MODE=false #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
 export LUNA_DEBUG=$DEBUG_MODE #sends this to rag.py
 
 #User based variables
@@ -43,8 +43,8 @@ extract_field() {
 
     echo "$response" | awk -v f="$field" '
         BEGIN {IGNORECASE=1}
-        $0 ~ "^"f":" {
-            sub("^"f":[[:space:]]*", "")
+        $0 ~ "^[[:space:]]*"f":" {
+            sub("^[[:space:]]*"f":[[:space:]]*", "")
             print
             exit
         }
@@ -179,6 +179,12 @@ run_agent() {
         ACTION=$(extract_field "$RESPONSE" "ACTION")
         ARGS=$(extract_field "$RESPONSE" "ARGS")
 
+        if [[ "$DEBUG_MODE" == "true" ]]; then
+            echo "PARSED ACTION: [$ACTION]"
+            echo "PARSED ARGS: [$ARGS]"
+        fi
+
+
         # Escalate if malformed
         if [ -z "$ACTION" ]; then
             RESPONSE=$(run_model "$MODEL_MEDIUM" "$PROMPT")
@@ -211,13 +217,13 @@ run_agent() {
         PREV_ARGS="$ARGS"
 
         #  Prevent multiple scratchpad updates
+        # If model tries to answer using scratchpad, convert to finish
         if [[ "$ACTION" == "scratchpad_update" ]]; then
-            SCRATCHPAD_COUNT=$((SCRATCHPAD_COUNT+1))
-            if [ $SCRATCHPAD_COUNT -gt 1 ]; then
-                ACTION="finish"
-                ARGS=""  # fix: "none" was being returned literally; empty falls back to $SCRATCHPAD
-            fi
+            SCRATCHPAD="$ARGS"
+            ACTION="finish"
+            ARGS="$SCRATCHPAD"
         fi
+
 
         if [[ "$ACTION" == "finish" ]]; then
             RESULT=$(execute_tool "$ACTION" "$ARGS")  # fix: was printing stale $RESULT from previous iteration
@@ -298,7 +304,7 @@ if [[ "$DEBUG_MODE" == "true" ]]; then
     echo "DEBUG: Lowercased='$LOWER'"
 fi
 
-# 🔥 REMEMBER ROUTE (MUST BE AFTER GOAL/LOWER)
+# REMEMBER ROUTE (MUST BE AFTER GOAL/LOWER)
 if [[ "$LOWER" == remember* ]]; then
     MEMORY_TEXT="${GOAL#remember }"
     OUTPUT=$(python3 $RAG add "$MEMORY_TEXT" 2>/dev/null)
