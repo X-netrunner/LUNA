@@ -8,6 +8,7 @@ RAG="$f_p/memory/rag.py"
 MODEL_MEDIUM="llama3.2:3b-instruct-q4_k_m"
 MODEL_LARGE="mannix/llama3.1-8b-lexi:q4_k_m"
 LUNA_MODE="ephemeral"   # change to daemon when needed
+MODEL_STATS="$f_p/logs/model_stats.log" #for response times and what not
 
 MAX_STEPS=6 #ensures that it doesn't go into an infinte loop
 
@@ -152,9 +153,50 @@ log_step() {
     } >> "$LOG_FILE"
 }
 
+########################################
+# MODEL ROUTER (Deterministic)
+########################################
+
+route_model() {
+    local goal="$1"
+    local length=${#goal}
+
+    # Detect code blocks
+    if echo "$goal" | grep -q '```'; then
+        echo "$MODEL_LARGE|code_block"
+        return
+    fi
+
+    # Long input
+    if [ "$length" -gt 200 ]; then
+        echo "$MODEL_LARGE|long_input"
+        return
+    fi
+
+    # Architectural / reasoning keywords
+    if echo "$goal" | grep -qiE "design|architecture|optimize|refactor|analyze|system|build|compare|simulate|distributed|performance"; then
+        echo "$MODEL_LARGE|keyword_trigger"
+        return
+    fi
+
+    # Default
+    echo "$MODEL_MEDIUM|default_simple"
+}
+
 run_agent() {
     GOAL="$*" # can use $* as well if you are getting any error with $@ use $*
     STEP=0
+    START_TIME=$(date +%s.%N) #start reaponse time
+    # Determine which model to start with
+    ROUTE_RESULT=$(route_model "$GOAL")
+    MODEL_CHOICE=$(echo "$ROUTE_RESULT" | cut -d'|' -f1)
+    ROUTE_REASON=$(echo "$ROUTE_RESULT" | cut -d'|' -f2)
+
+    if [[ "$DEBUG_MODE" == "true" ]]; then
+        echo "ROUTER DECISION: $MODEL_CHOICE"
+        echo "ROUTER REASON: $ROUTE_REASON"
+    fi
+
     SCRATCHPAD_COUNT=0
     LAST_ACTION="none"
     LAST_OBSERVATION="none"
@@ -169,8 +211,7 @@ run_agent() {
     while [ $STEP -lt $MAX_STEPS ]; do
 
         PROMPT=$(build_prompt)
-
-        RESPONSE=$(run_model "$MODEL_MEDIUM" "$PROMPT")
+        RESPONSE=$(run_model "$MODEL_CHOICE" "$PROMPT")
         if [[ "$DEBUG_MODE" == "true" ]]; then
             echo "MODEL RAW RESPONSE:"
             echo "$RESPONSE"
@@ -226,10 +267,22 @@ run_agent() {
 
 
         if [[ "$ACTION" == "finish" ]]; then
-            RESULT=$(execute_tool "$ACTION" "$ARGS")  # fix: was printing stale $RESULT from previous iteration
+            RESULT=$(execute_tool "$ACTION" "$ARGS")
+
+            END_TIME=$(date +%s.%N)
+            RESPONSE_TIME=$(echo "$END_TIME - $START_TIME" | bc)
+
+            if [[ "$DEBUG_MODE" == "true" ]]; then
+                echo "MODEL USED: $MODEL_CHOICE"
+                echo "RESPONSE TIME: ${RESPONSE_TIME}s"
+            fi
+
+            echo "$(date) | $MODEL_CHOICE | ${RESPONSE_TIME}s" >> "$MODEL_STATS"
+
             echo "$RESULT"
             break
         fi
+
 
         # Convert memory_store into direct answer
         if [[ "$ACTION" == "memory_store" ]]; then
@@ -278,6 +331,11 @@ run_agent() {
 
     # If we hit MAX_STEPS without finish, output what we have
     if [ "$ACTION" != "finish" ]; then
+        END_TIME=$(date +%s.%N)
+        RESPONSE_TIME=$(echo "$END_TIME - $START_TIME" | bc)
+
+        echo "$(date) | $MODEL_CHOICE | ${RESPONSE_TIME}s | max_steps" >> "$MODEL_STATS"
+
         echo "$SCRATCHPAD"
     fi
 } #main of the code without this , it is cooked
