@@ -32,6 +32,7 @@ chmod +x install.sh
 - **Linux** (tested on Arch Linux, Ubuntu, Fedora)
 - **Python 3.8+**
 - **Ollama** - [Install from ollama.ai](https://ollama.ai)
+- **socat** - for daemon socket communication (`sudo pacman -S socat` / `sudo apt install socat`)
 
 ### Automated Installation
 
@@ -52,6 +53,11 @@ The install script will:
 # Create directories
 mkdir -p logs memory/chroma_db prompts
 
+# Install socat (for daemon socket communication)
+sudo pacman -S socat          # Arch
+sudo apt install socat        # Ubuntu/Debian
+sudo dnf install socat        # Fedora
+
 # Install Python dependencies
 pip3 install -r requirements.txt --break-system-packages  # On Arch
 pip3 install -r requirements.txt  # On Ubuntu/Debian
@@ -68,6 +74,23 @@ chmod +x luna.sh
 ```
 
 ## Usage
+
+### RAG Daemon (Optional but Recommended)
+
+The RAG daemon keeps ChromaDB and the embedding model loaded in memory between calls, cutting RAG query time from ~2-5s to near-instant.
+
+```bash
+# Start the daemon in the background
+./luna.sh luna daemon start
+
+# Check if it's running
+./luna.sh luna daemon status
+
+# Stop it
+./luna.sh luna daemon stop
+```
+
+When the daemon is running, all memory operations automatically use the socket. If it's not running, Luna falls back to direct Python calls transparently — no behaviour change.
 
 ### Basic Commands
 
@@ -177,13 +200,20 @@ Luna uses a Reason + Action pattern:
 
 ### Entry Routing
 
-Fast commands bypass the AI agent entirely:
+Fast commands bypass the AI agent entirely. Intent classification uses MODEL_SMALL (1.5b), a tiny model that does a single-token classification call — much smarter than regex but still fast:
 
-```bash
-./luna.sh open spotify     # Instant (no AI)
-./luna.sh what do I like   # Uses AI + memory
-./luna.sh list files       # Instant (no AI)
 ```
+app_open    → open app directly
+memory_save → store to ChromaDB (with optional confirmation)
+memory_ask  → run_agent (so RAG context gets injected)
+file_op     → ls / find directly
+chat        → MODEL_MEDIUM brief response
+agent       → full ReAct loop
+```
+
+### RAG Daemon
+
+`rag_daemon.py` is a persistent Python process that keeps ChromaDB and the embedding model (`all-MiniLM-L6-v2`) warm in memory. It communicates via a Unix socket (`/tmp/luna_rag.sock`). `rag_call()` in `luna.sh` transparently uses the socket when the daemon is running, and falls back to direct Python calls otherwise.
 
 ## Project Structure
 
@@ -191,12 +221,15 @@ Fast commands bypass the AI agent entirely:
 luna/
 ├── luna.sh              # Main agent script
 ├── memory/
-│   ├── rag.py          # Vector memory (ChromaDB)
+│   ├── rag.py          # Vector memory (ChromaDB) — direct CLI fallback
+│   ├── rag_daemon.py   # Persistent daemon, keeps embedding model warm
 │   └── chroma_db/      # Persistent vector database
 ├── prompts/
 │   └── system.txt      # Agent system prompt
 ├── logs/
-│   └── agent.log       # Agent reasoning logs
+│   ├── agent.log       # Agent reasoning logs
+│   ├── model_stats.log # Response times per model
+│   └── rag_daemon.log  # Daemon output (when running)
 ├── install.sh          # Installation script
 └── requirements.txt    # Python dependencies
 ```

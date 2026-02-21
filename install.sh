@@ -44,6 +44,10 @@ if ! command -v pip3 &> /dev/null && ! command -v pip &> /dev/null; then
     MISSING_DEPS+=("python3-pip")
 fi
 
+if ! command -v socat &> /dev/null; then
+    MISSING_DEPS+=("socat")
+fi
+
 if ! command -v ollama &> /dev/null; then
     print_warning "Ollama not found. You'll need to install it manually."
     echo "Visit: https://ollama.ai"
@@ -58,11 +62,11 @@ if [ ${#MISSING_DEPS[@]} -gt 0 ]; then
     echo
     echo "Install them with:"
     if command -v pacman &> /dev/null; then
-        echo "  sudo pacman -S python python-pip"
+        echo "  sudo pacman -S python python-pip socat"
     elif command -v apt &> /dev/null; then
-        echo "  sudo apt install python3 python3-pip"
+        echo "  sudo apt install python3 python3-pip socat"
     elif command -v dnf &> /dev/null; then
-        echo "  sudo dnf install python3 python3-pip"
+        echo "  sudo dnf install python3 python3-pip socat"
     fi
     echo
     read -p "Continue anyway? (y/N): " -n 1 -r
@@ -189,10 +193,12 @@ echo
 echo "[8/8] Moving files to directories ..."
 
 mv "rag.py" "$(pwd)/memory/"
+mv "rag_daemon.py" "$(pwd)/memory/"
 mv "system.txt" "$(pwd)/prompts/"
 touch "$(pwd)/logs/log.txt"
 touch "$(pwd)/logs/agent.log"
-touch "$(pwd)/memory/rag_daemon.py"
+touch "$(pwd)/logs/model_stats.log"
+touch "$(pwd)/logs/rag_daemon.log"
 
 print_success "Files Moved"
 
@@ -241,6 +247,9 @@ echo "  Edit luna.sh: DEBUG_MODE=true"
 echo
 echo "First run:"
 echo "  ./luna.sh hi"
+echo
+echo "Optional — start RAG daemon for faster memory queries:"
+echo "  ./luna.sh luna daemon start"
 echo
 print_success "Luna is ready! 🌙"
 echo

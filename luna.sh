@@ -5,6 +5,8 @@ set -euo pipefail # was getting some weird error without this
 
 f_p=$(pwd) #path of files
 RAG="$f_p/memory/rag.py"
+RAG_DAEMON="$f_p/memory/rag_daemon.py"
+RAG_SOCKET="/tmp/luna_rag.sock"    # unix socket used by the daemon
 MODEL_SMALL="qwen2:1.5b-instruct"
 MODEL_MEDIUM="llama3.2:3b-instruct-q4_k_m"
 MODEL_LARGE="mannix/llama3.1-8b-lexi:q4_k_m"
@@ -37,6 +39,31 @@ run_model() {
     fi
     ollama run "$model" "$prompt"
 } #just to make it modular for future editting everything will come back here to run the model
+
+# RAG call — uses daemon socket if running, falls back to direct python call (slower but always works)
+# Usage: rag_call <add|query> <text>
+rag_call() {
+    local mode="$1"
+    local text="$2"
+
+    if [[ -S "$RAG_SOCKET" ]]; then
+        # Daemon is running — send JSON over socket, no python startup cost
+        local req="{\"mode\": \"$mode\", \"text\": $(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$text")}"
+        local res
+        res=$(echo "$req" | socat - UNIX-CONNECT:"$RAG_SOCKET" 2>/dev/null)
+        if [[ $? -eq 0 && -n "$res" ]]; then
+            if [[ "$mode" == "query" ]]; then
+                python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d.get('result',''))" "$res"
+            else
+                python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d.get('message',''))" "$res"
+            fi
+            return 0
+        fi
+    fi
+
+    # Fallback to direct python call if daemon is not running
+    python3 "$RAG" "$mode" "$text" 2>/dev/null
+}
 
 # Case-insensitive field extraction
 extract_field() {
@@ -97,7 +124,7 @@ execute_tool() {
                 OUTPUT="__ERROR__ Questions should not be stored as memory."
                 STATUS=1
             else
-                OUTPUT=$(python3 $RAG add "$args" 2>&1)
+                OUTPUT=$(rag_call add "$args")  # uses daemon socket if running, else direct python
                 STATUS=$?
             fi
             ;;
@@ -206,7 +233,7 @@ run_agent() {
     PREV_ACTION=""
     PREV_ARGS=""
 
-    RELEVANT_MEMORY=$(python3 $RAG query "$GOAL" 2>/dev/null)
+    RELEVANT_MEMORY=$(rag_call query "$GOAL")  # uses daemon socket if running, else direct python
 
 
     while [ $STEP -lt $MAX_STEPS ]; do
@@ -342,19 +369,65 @@ run_agent() {
 } #main of the code without this , it is cooked
 
 ########################################
+# INTENT ROUTER (MODEL_SMALL)
+# Uses a tiny model for single-token classification instead of regex.
+# MODEL_SMALL (1.5b) is fast enough that it adds minimal latency.
+# To add a new intent: add a line to the prompt categories + a case branch below.
+########################################
+
+route_intent() {
+    local input="$1"
+
+    local ROUTE_PROMPT="Classify the user input into ONE category. Reply with ONLY the category name, nothing else.
+
+Categories:
+  app_open      — user wants to open an app (spotify, browser, editor, file manager)
+  memory_save   — user says 'remember X' or 'I am/use/have/like/hate X'
+  memory_ask    — user asks what they told you, or asks about personal preferences
+  file_op       — list files, find logs, basic file listing
+  agent         — complex task: create, write, run, find, delete, explain, reason, analyse
+  chat          — greeting or casual conversation
+
+Input: $input
+Category:"
+
+    local result
+    result=$(ollama run "$MODEL_SMALL" "$ROUTE_PROMPT" 2>/dev/null | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')
+
+    # Validate result — fall back to agent if model returns something unexpected
+    case "$result" in
+        app_open|memory_save|memory_ask|file_op|agent|chat) echo "$result" ;;
+        *) echo "agent" ;;
+    esac
+}
+
+########################################
 # ENTRY ROUTING (HELPS IN MORE ACCURATE RESULTS)
 ########################################
 
 GOAL="$*"
 LOWER=$(echo "$GOAL" | tr '[:upper:]' '[:lower:]')
 
-if [[ "$LOWER" =~ ^i\ (am|use|have|like|remember|hate) ]]; then
-    echo "You mentioned: \"$GOAL\""
-    echo "Should I remember this? (yes/no)"
-    read CONFIRM
-    if [[ "$CONFIRM" == "yes" ]]; then
-        python3 $RAG add "$GOAL"
+# Daemon management — handle before routing so it works without MODEL_SMALL
+if [[ "$LOWER" == "luna daemon start" ]]; then
+    if [[ -S "$RAG_SOCKET" ]]; then
+        echo "Daemon is already running."
+    else
+        echo "Starting LUNA RAG daemon..."
+        nohup python3 "$RAG_DAEMON" start > "$f_p/logs/rag_daemon.log" 2>&1 &
+        sleep 2  # give it time to load the embedding model
+        echo "Daemon started. Log: logs/rag_daemon.log"
     fi
+    exit 0
+fi
+
+if [[ "$LOWER" == "luna daemon stop" ]]; then
+    python3 "$RAG_DAEMON" stop
+    exit 0
+fi
+
+if [[ "$LOWER" == "luna daemon status" ]]; then
+    python3 "$RAG_DAEMON" status
     exit 0
 fi
 
@@ -363,66 +436,70 @@ if [[ "$DEBUG_MODE" == "true" ]]; then
     echo "DEBUG: Lowercased='$LOWER'"
 fi
 
-# REMEMBER ROUTE (MUST BE AFTER GOAL/LOWER)
-if [[ "$LOWER" == remember* ]]; then
-    MEMORY_TEXT="${GOAL#remember }"
-    OUTPUT=$(python3 $RAG add "$MEMORY_TEXT" 2>/dev/null)
-    echo "$OUTPUT"
-    exit 0
+# Run MODEL_SMALL to classify intent — replaces the old regex block
+INTENT=$(route_intent "$GOAL")
+
+if [[ "$DEBUG_MODE" == "true" ]]; then
+    echo "DEBUG: INTENT='$INTENT'"
 fi
 
-# the following will be basic stuff, we don't want to send everything to LUNA and make more tokens.
-if [[ "$LOWER" == *"list"* && "$LOWER" == *"file"* ]]; then
-    ls -la
-    exit 0
-fi
+case "$INTENT" in
 
-if [[ "$LOWER" == *"find logs"* ]]; then
-    ls -d logs 2>/dev/null || echo "logs not found"
-    exit 0
-fi
+    app_open)
+        # Sub-route by app keyword — MODEL_SMALL only tells us it's an app, not which one
+        if [[ "$LOWER" == *"spotify"* ]]; then
+            $spotify & echo "Opening Spotify..."
+        elif [[ "$LOWER" == *"browser"* ]]; then
+            $browser & echo "Opening $browser..."
+        elif [[ "$LOWER" == *"editor"* || "$LOWER" == *"zed"* || "$LOWER" == *"text editor"* ]]; then
+            $editor & echo "Opening $editor..."
+        elif [[ "$LOWER" == *"explorer"* || "$LOWER" == *"file manager"* || "$LOWER" == *"file handler"* ]]; then
+            $explorer & echo "Opening $explorer..."
+        else
+            echo "Which app would you like to open?"
+        fi
+        ;;
 
-if [[ "$LOWER" == *"open spotify"* || "$LOWER" == *"spotify"* ]]; then
-    $spotify &
-    echo "Opening Spotify..."
-    exit 0
-fi
+    memory_save)
+        # Prompt for confirmation if it's an "I am/use/have..." style statement
+        if [[ "$LOWER" =~ ^i\ (am|use|have|like|remember|hate) ]]; then
+            echo "You mentioned: \"$GOAL\""
+            echo "Should I remember this? (yes/no)"
+            read CONFIRM
+            if [[ "$CONFIRM" == "yes" ]]; then
+                rag_call add "$GOAL"
+            fi
+        else
+            # "remember X" — strip the trigger word and store directly
+            MEMORY_TEXT="${GOAL#[Rr]emember }"
+            OUTPUT=$(rag_call add "$MEMORY_TEXT")
+            echo "$OUTPUT"
+        fi
+        ;;
 
-if [[ "$LOWER" == *"open explorer"* || "$LOWER" == *"file handler"* || "$LOWER" == *"file manager"* ]]; then
-    $explorer &
-    echo "Opening $explorer..."
-    exit 0
-fi
+    memory_ask)
+        # Always goes through agent so RAG context gets injected into the prompt
+        run_agent "$GOAL"
+        ;;
 
-if [[ "$LOWER" == *"open browser"* || "$LOWER" == *"browser"* ]]; then
-    $browser &
-    echo "Opening $browser..."
-    exit 0
-fi
+    file_op)
+        # the following will be basic stuff, we don't want to send everything to LUNA and make more tokens.
+        if [[ "$LOWER" == *"find logs"* ]]; then
+            ls -d logs 2>/dev/null || echo "logs not found"
+        else
+            ls -la
+        fi
+        ;;
 
-if [[ "$LOWER" == *"open editor"* || "$LOWER" == *"zed"* || "$LOWER" == *"text editor"* ]]; then
-    $editor &
-    echo "Opening $editor..."
-    exit 0
-fi
+    chat)
+        # Default conversation — small, no agent needed
+        ollama run "$MODEL_MEDIUM" "Respond briefly and calmly: $GOAL"
+        ;;
 
-# Knowledge-style questions should still use agent (so RAG works)
-if [[ "$LOWER" == *"what"* || "$LOWER" == *"explain"* || "$LOWER" == *"why"* || "$LOWER" == *"how"* || "$LOWER" == *"where"* ]]; then
-    run_agent "$GOAL"
-    exit 0
-fi
+    agent|*)
+        # Action keywords and everything else goes to the full ReAct agent
+        run_agent "$GOAL"
+        ;;
 
-# Action keywords → Agent
-if [[ "$LOWER" == *"list"* || "$LOWER" == *"find"* || "$LOWER" == *"create"* || "$LOWER" == *"delete"* || "$LOWER" == *"write"* || "$LOWER" == *"run"* ]]; then
-    run_agent "$GOAL"
-    exit 0
-fi
-
-# Default conversation
-if [[ "$LOWER" =~ ^(hi|hello|hey|how\ are\ you|whats\ up|what\'s\ up)$ ]]; then
-    ollama run "$MODEL_MEDIUM" "Respond briefly and calmly: $GOAL"
-    exit 0
-fi
-
-run_agent "$GOAL"
+esac
 exit 0
