@@ -18,7 +18,7 @@ LONG_MEMORY="$f_p/memory/long_term.log" #will use later to make sure LUNA will s
 CRITICAL_FILES=("$f_p/luna.sh" "$f_p/prompts/system.txt") #personallities , rules and what not
 
 SCRATCHPAD="" #think about it like cache but for LUNA it will help to keep some data relavent till the session ends.
-DEBUG_MODE=true #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
+DEBUG_MODE=false #if you turn it on you will see SCRATCHPAD data. tbh its not working well right now
 export LUNA_DEBUG=$DEBUG_MODE #sends this to rag.py
 
 #User based variables
